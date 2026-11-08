@@ -576,6 +576,15 @@ document.addEventListener('click', async e => {
   const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
   if (!invoke) return toast('Updater non disponibile');
   toast('Controllo aggiornamenti...');
+  const listen = window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen;
+  let unlisten;
+  if (listen) {
+    unlisten = await listen('update-progress', e => {
+      const p = e.payload || [];
+      const chunk = p[0] || 0, total = p[1] || 0;
+      if (total > 0) toast('Download aggiornamento: ' + Math.round(chunk/total*100) + '%');
+    });
+  }
   try {
     const res = await invoke('divine_check_updates');
     if (!res || !res.ok) return toast('Update non riuscito: ' + ((res && res.error) || 'errore'));
@@ -583,5 +592,7 @@ document.addEventListener('click', async e => {
     toast('Aggiornato a ' + res.version + ': chiudi e riapri il launcher');
   } catch (err) {
     toast('Update non riuscito: ' + (err && err.message ? err.message : err));
+  } finally {
+    if (typeof unlisten === 'function') unlisten();
   }
 });

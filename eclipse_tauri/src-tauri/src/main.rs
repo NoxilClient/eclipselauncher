@@ -148,8 +148,14 @@ async fn divine_check_updates(app: AppHandle) -> Value {
         Err(err) => return json!({ "ok": false, "error": err.to_string() }),
     };
     let version = update.version.clone();
+    let app2 = app.clone();
     match update
-        .download_and_install(|_chunk, _total| {}, || {})
+        .download_and_install(
+            move |chunk, total| {
+                let _ = app2.emit("update-progress", (chunk, total));
+            },
+            || {},
+        )
         .await
     {
         Ok(()) => json!({ "ok": true, "updated": true, "version": version }),
