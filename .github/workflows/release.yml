@@ -59,6 +59,7 @@ jobs:
         with:
           projectPath: eclipse_tauri/src-tauri
           args: --bundles appimage,deb
+      githubToken: ${{ secrets.GITHUB_TOKEN }}
           tagName: v__VERSION__
           releaseName: "DivineClient v__VERSION__"
           releaseBody: "Build automatica firmata da GitHub Actions."
