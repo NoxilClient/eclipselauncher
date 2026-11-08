@@ -611,11 +611,11 @@ document.addEventListener('click', async e => {
     }
     overlay.textContent = text;
   }
-  listen('update-start', () => showOverlay('Aggiornamento in corso, attendere...'));
+  listen('update-start', () => showOverlay('Updating, please wait...'));
   listen('update-progress', e => {
     const p = e.payload || [];
     const chunk = p[0] || 0, total = p[1] || 0;
-    if (total > 0 && overlay) overlay.textContent = 'Aggiornamento in corso: ' + Math.round(chunk/total*100) + '%';
+    if (total > 0 && overlay) overlay.textContent = 'Updating: ' + Math.round(chunk/total*100) + '%';
   });
-  listen('update-done', () => { if (overlay) overlay.textContent = 'Aggiornamento completato. Riavvia il launcher.'; });
+  listen('update-done', () => { if (overlay) overlay.textContent = 'Update complete. Restart the launcher.'; });
 })();
