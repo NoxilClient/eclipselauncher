@@ -170,6 +170,7 @@ fn main() {
         .setup(|app| {
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                 use tauri_plugin_updater::UpdaterExt;
                 let updater = match app_handle.updater() { Ok(u) => u, Err(_) => return };
                 let update = match updater.check().await { Ok(Some(u)) => u, _ => return };
