@@ -17,19 +17,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
             libayatana-appindicator3-dev librsvg2-dev patchelf
-      # La chiave arriva in base64 (una sola riga): cosi' newline, spazi o "="
-      # aggiunti dal copia-incolla non rompono piu' la firma.
+      # Il secret viene scritto byte per byte nel file della chiave: nessuna
+      # decodifica, nessuna riga aggiunta, cosi' la chiave resta identica a quella locale.
       - name: Restore signing key
         env:
-          KEY_B64: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_B64 }}
+          KEY_TEXT: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: |
           mkdir -p "$HOME/.tauri"
-          if [ -n "${KEY_B64:-}" ]; then
-            printf '%s' "$KEY_B64" | tr -d ' \r\n' | base64 -d > "$HOME/.tauri/divine.key"
-            echo "chiave ripristinata: $(wc -c < "$HOME/.tauri/divine.key") byte"
-          else
-            echo "TAURI_SIGNING_PRIVATE_KEY_B64 assente: uso il secret testuale"
-          fi
+          printf '%s' "$KEY_TEXT" > "$HOME/.tauri/divine.key"
+          echo "file chiave: $(wc -c < "$HOME/.tauri/divine.key") byte"
       # GitHub releases (linuxdeploy/AppRun) rispondono ogni tanto 504: li scarico
       # prima, con retry, cosi' il bundler li trova gia' in cache.
       - name: Pre-cache AppImage tooling
@@ -58,7 +54,7 @@ jobs:
           ls -l "$HOME/.cache/tauri" || true
       - uses: tauri-apps/tauri-action@v0
         env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_B64 != '' && '/home/runner/.tauri/divine.key' || secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY: /home/runner/.tauri/divine.key
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: eclipse_tauri/src-tauri
