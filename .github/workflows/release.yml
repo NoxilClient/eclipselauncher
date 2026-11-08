@@ -17,6 +17,32 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
             libayatana-appindicator3-dev librsvg2-dev patchelf
+      # GitHub releases (linuxdeploy/AppRun) rispondono ogni tanto 504: li scarico
+      # prima, con retry, cosi' il bundler li trova gia' in cache.
+      - name: Pre-cache AppImage tooling
+        continue-on-error: true
+        run: |
+          mkdir -p "$HOME/.cache/tauri"
+          fetch() {
+            name="$1"; url="$2"
+            for i in 1 2 3 4 5; do
+              if curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors --max-time 300 \
+                   -o "$HOME/.cache/tauri/$name" "$url"; then
+                echo "ok: $name"
+                return 0
+              fi
+              echo "retry $i: $name"
+              sleep 10
+            done
+            echo "non scaricato: $name (il bundler riprovera' da solo)"
+            return 1
+          }
+          fetch AppRun-x86_64 \
+            "https://github.com/tauri-apps/binary-releases/releases/download/apprun-old/AppRun-x86_64" || true
+          fetch linuxdeploy-07333c6-x86_64.AppImage \
+            "https://github.com/tauri-apps/binary-releases/releases/download/linuxdeploy-07333c6/linuxdeploy-x86_64.AppImage" || true
+          chmod +x "$HOME/.cache/tauri"/*.AppImage 2>/dev/null || true
+          ls -l "$HOME/.cache/tauri" || true
       - uses: tauri-apps/tauri-action@v0
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
