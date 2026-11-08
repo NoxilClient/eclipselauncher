@@ -74,7 +74,7 @@ pub fn data_dir() -> PathBuf {
     }
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
     if cfg!(target_os = "windows") {
-        let base = std::env::var("APPDATA").map(PathBuf::from).unwrap_or_else(|_| home.join("AppData/Roaming"));
+        let base = std::env::var("LOCALAPPDATA").map(PathBuf::from).unwrap_or_else(|_| home.join("AppData/Local"));
         base.join("EclipseClient")
     } else if cfg!(target_os = "macos") {
         home.join("Library/Application Support/EclipseClient")

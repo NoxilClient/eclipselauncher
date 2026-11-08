@@ -5,9 +5,26 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-jobs:
-  release:
-    runs-on: ubuntu-22.04
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: eclipse_tauri/src-tauri
+          args: --bundles nsis
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          tagName: v__VERSION__
+          releaseName: "DivineClient v__VERSION__"
+          releaseBody: "Build automatica da GitHub Actions."
+
     permissions:
       contents: write
     steps:
