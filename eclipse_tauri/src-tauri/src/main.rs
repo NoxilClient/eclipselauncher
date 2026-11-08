@@ -168,6 +168,19 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            let app_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                use tauri_plugin_updater::UpdaterExt;
+                let updater = match app_handle.updater() { Ok(u) => u, Err(_) => return };
+                let update = match updater.check().await { Ok(Some(u)) => u, _ => return };
+                let _ = app_handle.emit("update-start", update.version.clone());
+                let app2 = app_handle.clone();
+                let _ = update.download_and_install(move |chunk, total| {
+                    let _ = app2.emit("update-progress", (chunk, total));
+                }, || {}).await;
+                let _ = app_handle.emit("update-done", ());
+                std::process::exit(0);
+            });
             // where the packaged app keeps its resources (the client's mods live there)
             if let Ok(dir) = app.path().resource_dir() {
                 client::set_resource_dir(dir);

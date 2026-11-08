@@ -596,3 +596,26 @@ document.addEventListener('click', async e => {
     if (typeof unlisten === 'function') unlisten();
   }
 });
+
+
+// ---- auto-update on startup ----
+(function () {
+  const listen = window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen;
+  if (!listen) return;
+  let overlay;
+  function showOverlay(text) {
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);color:#fff;font-size:20px;z-index:99999;flex-direction:column;gap:12px;';
+      document.body.appendChild(overlay);
+    }
+    overlay.textContent = text;
+  }
+  listen('update-start', () => showOverlay('Aggiornamento in corso, attendere...'));
+  listen('update-progress', e => {
+    const p = e.payload || [];
+    const chunk = p[0] || 0, total = p[1] || 0;
+    if (total > 0 && overlay) overlay.textContent = 'Aggiornamento in corso: ' + Math.round(chunk/total*100) + '%';
+  });
+  listen('update-done', () => { if (overlay) overlay.textContent = 'Aggiornamento completato. Riavvia il launcher.'; });
+})();
