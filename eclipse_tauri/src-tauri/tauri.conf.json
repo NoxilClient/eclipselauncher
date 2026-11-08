@@ -32,6 +32,11 @@
     "createUpdaterArtifacts": true,
     "resources": {
       "../mods": "mods"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
     }
   },
   "plugins": {
