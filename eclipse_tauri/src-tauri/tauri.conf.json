@@ -35,7 +35,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDBBREM1QjU5MjdBNEQ4RjUKUldUMTJLUW5XVnZjQ3ZZcDYxQndnMUQvT1VESlg3aElEUjE0S2VNMThjNnUwcENuZkUvK2o5ZlYK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg5OTI2OTk1QUVBRDMzREYKUldUZk02MnVsV21TaVduTEFqUkYrWnp4K2VZVzRhaG5aWWVWT3QxUTJSeWUxVEhiSEdHRzhGaGYK",
       "endpoints": [
         "https://github.com/NoxilClient/eclipselauncher/releases/latest/download/latest.json"
       ]
