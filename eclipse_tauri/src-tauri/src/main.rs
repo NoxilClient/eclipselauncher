@@ -176,11 +176,13 @@ fn main() {
                 let update = match updater.check().await { Ok(Some(u)) => u, _ => return };
                 let _ = app_handle.emit("update-start", update.version.clone());
                 let app2 = app_handle.clone();
-                let _ = update.download_and_install(move |chunk, total| {
+                let res = update.download_and_install(move |chunk, total| {
                     let _ = app2.emit("update-progress", (chunk, total));
                 }, || {}).await;
-                let _ = app_handle.emit("update-done", ());
-                std::process::exit(0);
+                if res.is_ok() {
+                    let _ = app_handle.emit("update-done", ());
+                    app_handle.restart();
+                }
             });
             // where the packaged app keeps its resources (the client's mods live there)
             if let Ok(dir) = app.path().resource_dir() {
