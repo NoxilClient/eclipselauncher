@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="crosshairclient-1.20.1-forge2">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/mods/1.20.1/crosshairclient-1.20.1-forge.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data: https:; connect-src 'self' ipc: http://ipc.localhost">
+<title>DivineClient</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="bg"></div>
+<canvas id="fx" aria-hidden="true"></canvas>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <img class="brand-logo" src="assets/divine.png" alt="DivineClient">
+      <span>DivineClient</span>
+    </div>
+    <nav id="nav">
+      <button data-page="home" class="on">Home</button>
+      <button data-page="profiles">Profiles</button>
+      <button data-page="versions">Versions</button>
+      <button data-page="settings">Settings</button>
+      <button data-page="about">About</button>
+    </nav>
+    <div class="account"><div class="avatar" id="accountAvatar">P</div><div><b id="accountName">Player</b><small>Offline account</small></div></div>
+  </aside>
+
+  <main>
+    <section id="page-home" class="page on">
+      <div class="hero">
+        <div>
+          <small>Selected profile</small>
+          <h1 id="heroName">-</h1>
+          <p id="heroMeta" class="dim"></p>
+        </div>
+        <div class="play">
+          <select id="heroSelect" aria-label="Switch profile"></select>
+          <div class="playcol">
+            <button id="playBtn" class="btn primary big">Play</button>
+            <small id="playState">Checking install…</small>
+          </div>
+        </div>
+      </div>
+      <h2>News</h2>
+      <div class="news">
+        <article><div class="thumb a"></div><h3>New version available</h3><p class="dim">Sample text for a launcher news post.</p></article>
+        <article><div class="thumb b"></div><h3>Patch notes</h3><p class="dim">Show your update notes here.</p></article>
+        <article><div class="thumb c"></div><h3>Community events</h3><p class="dim">Placeholder: replace with your content.</p></article>
+      </div>
+    </section>
+
+    <section id="page-profiles" class="page">
+      <div class="head"><h1>Profiles</h1><button id="newProfile" class="btn primary">+ New profile</button></div>
+      <div id="profileGrid" class="pgrid"></div>
+    </section>
+
+    <section id="page-versions" class="page">
+      <div class="head"><h1>Versions</h1><span id="vSummary" class="dim"></span></div>
+      <p class="dim">Only the versions DivineClient supports. Install once, then Play launches Minecraft directly.</p>
+      <p id="vProgress" class="dim"></p>
+      <div id="vList" class="vlist"></div>
+    </section>
+
+    <section id="page-settings" class="page">
+      <h1>Settings</h1>
+      <div class="form">
+        <label>Default RAM: <b id="ramOut">4</b> GB
+          <input id="setRam" type="range" min="1" max="16" step="1"></label>
+        <label>Username (offline)
+          <input id="setUser" type="text" maxlength="16" placeholder="Player"></label>
+        <label>Java path (optional)
+          <input id="setJava" type="text" placeholder="Automatic"></label>
+        <label>CurseForge API key (optional)
+          <input id="setCfKey" type="text" placeholder="Paste your free key"></label>
+        <p class="dim">CurseForge needs a free key from console.curseforge.com to search and download mods. Modrinth works without one.</p>
+        <p id="dataState" class="dim"></p>
+        <label class="check"><input id="setShoot" type="checkbox"> Shooting stars</label>
+        <button id="checkUpdates" class="btn" type="button">Check updates</button>
+        <button id="saveSettings" class="btn primary">Save</button>
+      </div>
+    </section>
+
+    <section id="page-about" class="page">
+      <h1>About</h1>
+      <p class="dim">DivineClient launcher. It installs and launches Minecraft on its own, with the DivineClient mod and the mods you add.</p>
+    </section>
+  </main>
+</div>
+
+<dialog id="dlg">
+  <form id="pForm" method="dialog">
+    <h2 id="dlgTitle">New profile</h2>
+    <label>Name <input id="fName" required maxlength="32"></label>
+    <label>Version <select id="fVersion"></select></label>
+    <label>Loader <select id="fLoader"><option>Vanilla</option><option>Fabric</option><option>Forge</option><option>NeoForge</option><option>Quilt</option></select></label>
+    <label>RAM: <b id="fRamOut">4</b> GB <input id="fRam" type="range" min="1" max="16" value="4"></label>
+    <label>Icon color <input id="fColor" type="color" value="#6c8cff"></label>
+
+    <section class="mods-section">
+      <div class="mods-head">
+        <div class="msubs">
+          <button type="button" class="msub on" data-mtab="installed">Mods</button>
+          <button type="button" class="msub" data-mtab="download">Download mods</button>
+        </div>
+        <span id="fModsCount" class="dim">0 mods</span>
+      </div>
+
+      <div id="fPaneInstalled" class="mods-pane">
+        <div id="fModsList" class="mods-list"><div class="mods-empty">Loading…</div></div>
+      </div>
+
+      <div id="fPaneDownload" class="mods-pane" hidden>
+        <div class="mods-toolbar">
+          <div class="msources">
+            <button type="button" class="msource on" data-source="modrinth">Modrinth</button>
+            <button type="button" class="msource" data-source="curseforge">CurseForge</button>
+          </div>
+          <input id="fModSearch" type="text" placeholder="Search mods…">
+          <button type="button" id="fModSearchBtn" class="btn">Search</button>
+        </div>
+        <p id="fModStatus" class="dim"></p>
+        <div id="fModResults" class="mods-results"></div>
+      </div>
+    </section>
+
+    <div class="actions"><button type="button" id="cancel" class="btn">Cancel</button><button type="submit" class="btn primary">Save</button></div>
+  </form>
+</dialog>
+
+<div id="toast" role="status"></div>
+<script src="bridge.js"></script>
+<script src="stars.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

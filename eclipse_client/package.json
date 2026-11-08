@@ -1,0 +1,41 @@
+{
+  "name": "eclipse-client",
+  "version": "0.2.0",
+  "description": "DivineClient launcher: installs and launches Minecraft with the Eclipse Client mod.",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron . --no-sandbox",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.example.eclipseclient",
+    "productName": "DivineClient",
+    "files": [
+      "main.js",
+      "launcher.js",
+      "preload.js",
+      "engine/**/*",
+      "mods/**/*",
+      "src/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Game"
+    },
+    "icon": "src/assets/icon.png"
+  },
+  "dependencies": {
+    "adm-zip": "^0.6.1"
+  }
+}

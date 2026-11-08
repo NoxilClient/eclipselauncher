@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="26.6">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/src-tauri/target/debug/mods/26.3/fabric-api-0.163.0+26.3.jar!/" />
+      <root url="jar://$PROJECT_DIR$/src-tauri/target/debug/mods/26.3/crosshairclient-26.3.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

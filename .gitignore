@@ -1,0 +1,6 @@
+target/
+node_modules/
+dist/
+*.log
+.tauri/
+eclipse_tauri_backup_*.tar.gz

@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="1.21.15">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/mods/1.21.11/crosshairclient-1.21.11.jar!/" />
+      <root url="jar://$PROJECT_DIR$/mods/1.21.11/fabric-api-0.141.6+1.21.11.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

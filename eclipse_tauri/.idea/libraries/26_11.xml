@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="26.11">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/src-tauri/target/release/bundle/deb/Eclipse Client_0.3.0_amd64/data/usr/lib/Eclipse Client/mods/26.2/fabric-api-0.161.0+26.2.jar!/" />
+      <root url="jar://$PROJECT_DIR$/src-tauri/target/release/bundle/deb/Eclipse Client_0.3.0_amd64/data/usr/lib/Eclipse Client/mods/26.2/crosshairclient-26.2.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

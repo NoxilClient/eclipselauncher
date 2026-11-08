@@ -1,0 +1,9 @@
+<component name="libraryTable">
+  <library name="crosshairclient-1.8.9-forge3">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/src-tauri/target/release/bundle/deb/Eclipse Client_0.3.0_amd64/data/usr/lib/Eclipse Client/mods/1.8.9/crosshairclient-1.8.9-forge.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>
