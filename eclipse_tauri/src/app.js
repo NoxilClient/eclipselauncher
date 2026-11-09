@@ -633,24 +633,69 @@ document.addEventListener('click', async e => {
 });
 
 
-// ---- auto-update on startup: solo avviso, nessun download automatico ----
+// ---- aggiornamenti: un controllo ogni 4 ore, avviso e installazione solo su richiesta ----
 (function () {
   const listen = tauriListen();
+  const core = window.__TAURI__ && window.__TAURI__.core;
+  const dismiss = document.getElementById('dismissUpdate');
+  const checkBtn = document.getElementById('checkUpdates');
   if (!listen) return;
+
+  let seenVersion = '';
+
+  const showDismiss = show => {
+    if (dismiss) dismiss.style.display = show ? 'inline-flex' : 'none';
+  };
+
+  const applyStatus = res => {
+    if (!res || !res.ok || !res.available || res.dismissed) {
+      if (res && res.dismissed) setUpdateStatus('');
+      showDismiss(false);
+      return;
+    }
+    seenVersion = res.version || '';
+    if (res.policy && res.policy !== 'self') {
+      setUpdateStatus('Aggiornamento ' + seenVersion + ': ' + (res.hint || 'aggiorna dal gestore pacchetti'));
+      showDismiss(false);
+      return;
+    }
+    setUpdateStatus('Aggiornamento ' + seenVersion + ' disponibile: premi Check updates per installarlo');
+    showDismiss(true);
+  };
+
   listen('update-available', ev => {
     const version = ev && ev.payload && ev.payload.version;
     if (!version) return;
-    setUpdateStatus('Aggiornamento ' + version + ' disponibile: premi Check updates per installarlo');
+    applyStatus({ ok: true, available: true, version, policy: 'self' });
     toast('Aggiornamento ' + version + ' disponibile');
   });
   listen('update-start', ev => {
     const version = ev && ev.payload && ev.payload.version;
+    showDismiss(false);
     setUpdateStatus('Scaricando aggiornamento' + (version ? ' ' + version : '') + '...');
   });
-  listen('update-done', () => setUpdateStatus('Aggiornamento installato, riavvio...'));
+  listen('update-done', () => {
+    showDismiss(false);
+    setUpdateStatus('Aggiornamento installato, riavvio...');
+  });
   listen('update-error', ev => {
     setUpdateStatus('');
     const message = ev && ev.payload && ev.payload.message;
     if (message) toast(message);
+  });
+
+  // stato iniziale: la prima chiamata va in rete, le successive entro 4 ore leggono il file
+  if (core && typeof core.invoke === 'function') {
+    core.invoke('divine_check_update_status', { force: false }).then(applyStatus).catch(() => {});
+  }
+
+  if (checkBtn) checkBtn.addEventListener('click', () => showDismiss(false));
+
+  if (dismiss && core) dismiss.addEventListener('click', async () => {
+    showDismiss(false);
+    setUpdateStatus('');
+    try {
+      await core.invoke('divine_dismiss_update', { version: seenVersion || null });
+    } catch (_) {}
   });
 })();

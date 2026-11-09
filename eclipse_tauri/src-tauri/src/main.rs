@@ -157,9 +157,102 @@ fn emit_update_progress(app: &AppHandle, downloaded: u64, total: Option<u64>) {
     );
 }
 
-/// Solo controllo: nessun download. Serve all'avvio, che deve restare silenzioso.
-async fn divine_find_update(app: &AppHandle) -> Value {
+/// Intervallo minimo tra due controlli automatici (come fa Basalt).
+const MIN_CHECK_INTERVAL_SECS: i64 = 4 * 60 * 60;
+
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+struct UpdateState {
+    #[serde(default)]
+    last_checked_at: i64,
+    #[serde(default)]
+    latest_version: Option<String>,
+    #[serde(default)]
+    available: bool,
+    #[serde(default)]
+    dismissed_version: Option<String>,
+}
+
+fn state_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|dir| dir.join("update_state.json"))
+}
+
+fn read_state(app: &AppHandle) -> UpdateState {
+    state_path(app)
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|text| serde_json::from_str::<UpdateState>(&text).ok())
+        .unwrap_or_default()
+}
+
+fn write_state(app: &AppHandle, state: &UpdateState) {
+    let Some(path) = state_path(app) else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(text) = serde_json::to_string_pretty(state) {
+        let _ = std::fs::write(path, text);
+    }
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Chi possiede questa installazione: solo una copia "self" puo' aggiornarsi da sola.
+#[cfg(target_os = "linux")]
+fn install_policy() -> (&'static str, &'static str) {
+    const SELF_HINT: &str = "Il launcher scarica e installa aggiornamenti firmati.";
+    const PACKAGE_HINT: &str =
+        "Questa copia e' gestita dal sistema: aggiorna con il gestore pacchetti o scarica la nuova AppImage.";
+    if std::env::var_os("APPIMAGE").is_some() {
+        return ("self", SELF_HINT);
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        let path = exe.to_string_lossy();
+        if path.starts_with("/usr/") || path.starts_with("/opt/") || path.starts_with("/nix/store") {
+            return ("package", PACKAGE_HINT);
+        }
+    }
+    ("self", SELF_HINT)
+}
+
+#[cfg(not(target_os = "linux"))]
+fn install_policy() -> (&'static str, &'static str) {
+    ("self", "Il launcher scarica e installa aggiornamenti firmati.")
+}
+
+/// Solo controllo: nessun download. `force` ignora l'intervallo minimo.
+async fn divine_find_update(app: &AppHandle, force: bool) -> Value {
     use tauri_plugin_updater::UpdaterExt;
+
+    let (policy, hint) = install_policy();
+    let mut state = read_state(app);
+
+    // entro l'intervallo non si tocca la rete: si riusa l'esito salvato su disco
+    if !force && state.last_checked_at > 0 {
+        let since = now_secs() - state.last_checked_at;
+        if (0..MIN_CHECK_INTERVAL_SECS).contains(&since) {
+            let dismissed = state.available
+                && state.latest_version.is_some()
+                && state.dismissed_version == state.latest_version;
+            return json!({
+                "ok": true,
+                "cached": true,
+                "available": state.available,
+                "version": state.latest_version,
+                "dismissed": dismissed,
+                "policy": policy,
+                "hint": hint
+            });
+        }
+    }
 
     let updater = match app.updater() {
         Ok(updater) => updater,
@@ -167,11 +260,45 @@ async fn divine_find_update(app: &AppHandle) -> Value {
     };
 
     match tokio::time::timeout(std::time::Duration::from_secs(20), updater.check()).await {
-        Ok(Ok(Some(update))) => json!({ "ok": true, "available": true, "version": update.version }),
-        Ok(Ok(None)) => json!({ "ok": true, "available": false }),
+        Ok(Ok(Some(update))) => {
+            let dismissed = state.dismissed_version.as_deref() == Some(update.version.as_str());
+            state.last_checked_at = now_secs();
+            state.available = true;
+            state.latest_version = Some(update.version.clone());
+            write_state(app, &state);
+            json!({
+                "ok": true,
+                "available": true,
+                "version": update.version,
+                "dismissed": dismissed,
+                "policy": policy,
+                "hint": hint
+            })
+        }
+        Ok(Ok(None)) => {
+            state.last_checked_at = now_secs();
+            state.available = false;
+            state.latest_version = None;
+            write_state(app, &state);
+            json!({ "ok": true, "available": false, "policy": policy, "hint": hint })
+        }
         Ok(Err(err)) => json!({ "ok": false, "error": err.to_string() }),
         Err(_) => json!({ "ok": false, "error": "timeout" }),
     }
+}
+
+#[tauri::command]
+async fn divine_check_update_status(app: AppHandle, force: Option<bool>) -> Value {
+    divine_find_update(&app, force.unwrap_or(false)).await
+}
+
+/// "Non ora": questa versione non viene piu' proposta finche' non ne esce una nuova.
+#[tauri::command]
+fn divine_dismiss_update(app: AppHandle, version: Option<String>) -> Value {
+    let mut state = read_state(&app);
+    state.dismissed_version = version.or_else(|| state.latest_version.clone());
+    write_state(&app, &state);
+    json!({ "ok": true })
 }
 
 async fn divine_update(app: AppHandle) -> Value {
@@ -181,6 +308,17 @@ async fn divine_update(app: AppHandle) -> Value {
         return json!({ "ok": true, "updated": false, "busy": true });
     }
     let _guard = UpdateGuard;
+
+    // su una copia gestita dal sistema il self-update non deve nemmeno partire
+    let (policy, hint) = install_policy();
+    if policy != "self" {
+        return json!({ "ok": false, "error": hint, "policy": policy });
+    }
+
+    // un nuovo tentativo rimette in gioco l'avviso se l'installazione non riesce
+    let mut state = read_state(&app);
+    state.dismissed_version = None;
+    write_state(&app, &state);
 
     let updater = match app.updater() {
         Ok(updater) => updater,
@@ -232,6 +370,10 @@ async fn divine_update(app: AppHandle) -> Value {
 
     match result {
         Ok(Ok(())) => {
+            // dopo l'installazione il prossimo avvio deve ricontrollare subito
+            if let Some(path) = state_path(&app) {
+                let _ = std::fs::remove_file(path);
+            }
             let _ = app.emit("update-done", json!({ "version": version }));
             let restarter = app.clone();
             tauri::async_runtime::spawn(async move {
@@ -263,17 +405,6 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
-            // all'avvio solo un controllo silenzioso: se c'e' una versione nuova lo diciamo,
-            // senza scaricare nulla e senza overlay a ogni partenza.
-            let app_handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                let found = divine_find_update(&app_handle).await;
-                if found.get("available").and_then(Value::as_bool) == Some(true) {
-                    let version = found.get("version").cloned().unwrap_or(Value::Null);
-                    let _ = app_handle.emit("update-available", json!({ "version": version }));
-                }
-            });
             // where the packaged app keeps its resources (the client's mods live there)
             if let Ok(dir) = app.path().resource_dir() {
                 client::set_resource_dir(dir);
@@ -288,7 +419,9 @@ fn main() {
             eclipse_remove_mod,
             eclipse_search_mods,
             eclipse_download_mod,
-            divine_check_updates
+            divine_check_updates,
+            divine_check_update_status,
+            divine_dismiss_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running DivineClient");
