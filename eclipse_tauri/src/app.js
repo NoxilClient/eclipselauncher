@@ -633,7 +633,7 @@ document.addEventListener('click', async e => {
 });
 
 
-// ---- aggiornamenti: un controllo ogni 4 ore, avviso e installazione solo su richiesta ----
+// ---- aggiornamenti: controllo a ogni avvio e a ogni click, senza limiti ----
 (function () {
   const listen = tauriListen();
   const core = window.__TAURI__ && window.__TAURI__.core;
@@ -684,7 +684,7 @@ document.addEventListener('click', async e => {
     if (message) toast(message);
   });
 
-  // stato iniziale: la prima chiamata va in rete, le successive entro 4 ore leggono il file
+  // stato iniziale: controllo in rete a ogni avvio
   if (core && typeof core.invoke === 'function') {
     core.invoke('divine_check_update_status', { force: false }).then(applyStatus).catch(() => {});
   }

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DivineClient",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "identifier": "com.divine.client",
   "build": {
     "frontendDist": "../src"
@@ -35,7 +35,12 @@
     },
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "languages": [
+          "English"
+        ],
+        "displayLanguageSelector": false,
+        "compression": "lzma"
       },
       "signCommand": {
         "cmd": "powershell",
@@ -47,6 +52,10 @@
           "sign-windows.ps1",
           "%1"
         ]
+      },
+      "webviewInstallMode": {
+        "type": "embedBootstrapper",
+        "silent": true
       }
     }
   },

@@ -157,9 +157,6 @@ fn emit_update_progress(app: &AppHandle, downloaded: u64, total: Option<u64>) {
     );
 }
 
-/// Intervallo minimo tra due controlli automatici (come fa Basalt).
-const MIN_CHECK_INTERVAL_SECS: i64 = 4 * 60 * 60;
-
 #[derive(Default, serde::Serialize, serde::Deserialize)]
 struct UpdateState {
     #[serde(default)]
@@ -228,31 +225,13 @@ fn install_policy() -> (&'static str, &'static str) {
     ("self", "Il launcher scarica e installa aggiornamenti firmati.")
 }
 
-/// Solo controllo: nessun download. `force` ignora l'intervallo minimo.
-async fn divine_find_update(app: &AppHandle, force: bool) -> Value {
+/// Solo controllo: nessun download. Ogni chiamata va in rete: nessun intervallo minimo e
+/// nessuna versione messa da parte, come il metodo di Basalt (aggiorni quando vuoi).
+async fn divine_find_update(app: &AppHandle, _force: bool) -> Value {
     use tauri_plugin_updater::UpdaterExt;
 
     let (policy, hint) = install_policy();
     let mut state = read_state(app);
-
-    // entro l'intervallo non si tocca la rete: si riusa l'esito salvato su disco
-    if !force && state.last_checked_at > 0 {
-        let since = now_secs() - state.last_checked_at;
-        if (0..MIN_CHECK_INTERVAL_SECS).contains(&since) {
-            let dismissed = state.available
-                && state.latest_version.is_some()
-                && state.dismissed_version == state.latest_version;
-            return json!({
-                "ok": true,
-                "cached": true,
-                "available": state.available,
-                "version": state.latest_version,
-                "dismissed": dismissed,
-                "policy": policy,
-                "hint": hint
-            });
-        }
-    }
 
     let updater = match app.updater() {
         Ok(updater) => updater,
@@ -261,7 +240,6 @@ async fn divine_find_update(app: &AppHandle, force: bool) -> Value {
 
     match tokio::time::timeout(std::time::Duration::from_secs(20), updater.check()).await {
         Ok(Ok(Some(update))) => {
-            let dismissed = state.dismissed_version.as_deref() == Some(update.version.as_str());
             state.last_checked_at = now_secs();
             state.available = true;
             state.latest_version = Some(update.version.clone());
@@ -270,7 +248,7 @@ async fn divine_find_update(app: &AppHandle, force: bool) -> Value {
                 "ok": true,
                 "available": true,
                 "version": update.version,
-                "dismissed": dismissed,
+                "dismissed": false,
                 "policy": policy,
                 "hint": hint
             })
@@ -292,11 +270,12 @@ async fn divine_check_update_status(app: AppHandle, force: Option<bool>) -> Valu
     divine_find_update(&app, force.unwrap_or(false)).await
 }
 
-/// "Non ora": questa versione non viene piu' proposta finche' non ne esce una nuova.
+/// "Non ora": nasconde l'avviso solo per questa sessione. Al prossimo avvio (o al prossimo
+/// click su Check updates) l'aggiornamento viene riproposto, anche se e' la stessa versione.
 #[tauri::command]
-fn divine_dismiss_update(app: AppHandle, version: Option<String>) -> Value {
+fn divine_dismiss_update(app: AppHandle, _version: Option<String>) -> Value {
     let mut state = read_state(&app);
-    state.dismissed_version = version.or_else(|| state.latest_version.clone());
+    state.dismissed_version = None;
     write_state(&app, &state);
     json!({ "ok": true })
 }
@@ -314,11 +293,6 @@ async fn divine_update(app: AppHandle) -> Value {
     if policy != "self" {
         return json!({ "ok": false, "error": hint, "policy": policy });
     }
-
-    // un nuovo tentativo rimette in gioco l'avviso se l'installazione non riesce
-    let mut state = read_state(&app);
-    state.dismissed_version = None;
-    write_state(&app, &state);
 
     let updater = match app.updater() {
         Ok(updater) => updater,
