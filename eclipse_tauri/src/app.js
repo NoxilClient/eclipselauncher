@@ -633,66 +633,22 @@ document.addEventListener('click', async e => {
 });
 
 
-// ---- auto-update on startup ----
+// ---- auto-update on startup: solo avviso, nessun download automatico ----
 (function () {
   const listen = tauriListen();
   if (!listen) return;
-  let overlay, fill, label;
-
-  function ensureOverlay(text) {
-    if (!overlay) {
-      overlay = document.createElement('div');
-      overlay.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.88);color:#fff;z-index:99999;flex-direction:column;gap:14px;cursor:pointer;';
-      overlay.title = 'Clicca per nascondere';
-      overlay.addEventListener('click', hideOverlay);
-      label = document.createElement('div');
-      label.style.cssText = 'font-size:20px;';
-      label.textContent = text || 'Updating, please wait...';
-      const bar = document.createElement('div');
-      bar.style.cssText = 'width:340px;height:8px;border-radius:999px;background:rgba(255,255,255,.18);overflow:hidden;';
-      fill = document.createElement('div');
-      fill.style.cssText = 'width:0%;height:100%;background:#4f8cff;transition:width .2s ease;';
-      bar.appendChild(fill);
-      const hint = document.createElement('div');
-      hint.style.cssText = 'font-size:12px;opacity:.6;';
-      hint.textContent = 'Clicca per nascondere';
-      overlay.append(label, bar, hint);
-      document.body.appendChild(overlay);
-    } else if (text && label) {
-      label.textContent = text;
-    }
-  }
-
-  function hideOverlay() {
-    if (overlay) { overlay.remove(); overlay = null; fill = null; label = null; }
-  }
-
-  function setPercent(payload) {
-    if (!overlay || !fill) return;
-    const data = payload || {};
-    const percent = typeof data.percent === 'number' ? Math.max(0, Math.min(100, data.percent)) : null;
-    fill.style.width = (percent != null ? percent : 0) + '%';
-    if (label) label.textContent = 'Updating: ' + updateLabel(data);
-  }
-
+  listen('update-available', ev => {
+    const version = ev && ev.payload && ev.payload.version;
+    if (!version) return;
+    setUpdateStatus('Aggiornamento ' + version + ' disponibile: premi Check updates per installarlo');
+    toast('Aggiornamento ' + version + ' disponibile');
+  });
   listen('update-start', ev => {
     const version = ev && ev.payload && ev.payload.version;
-    ensureOverlay(version ? 'Updating to ' + version + '...' : 'Updating, please wait...');
-    setUpdateStatus('Scaricando aggiornamento...');
+    setUpdateStatus('Scaricando aggiornamento' + (version ? ' ' + version : '') + '...');
   });
-  listen('update-progress', ev => {
-    setPercent(ev.payload);
-    setUpdateStatus('Scaricando aggiornamento: ' + updateLabel(ev.payload));
-  });
-  listen('update-done', () => {
-    if (overlay) {
-      if (label) label.textContent = 'Update installed, restarting...';
-      if (fill) fill.style.width = '100%';
-    }
-    setUpdateStatus('Aggiornamento installato, riavvio...');
-  });
+  listen('update-done', () => setUpdateStatus('Aggiornamento installato, riavvio...'));
   listen('update-error', ev => {
-    hideOverlay();
     setUpdateStatus('');
     const message = ev && ev.payload && ev.payload.message;
     if (message) toast(message);

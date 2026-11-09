@@ -157,6 +157,23 @@ fn emit_update_progress(app: &AppHandle, downloaded: u64, total: Option<u64>) {
     );
 }
 
+/// Solo controllo: nessun download. Serve all'avvio, che deve restare silenzioso.
+async fn divine_find_update(app: &AppHandle) -> Value {
+    use tauri_plugin_updater::UpdaterExt;
+
+    let updater = match app.updater() {
+        Ok(updater) => updater,
+        Err(err) => return json!({ "ok": false, "error": err.to_string() }),
+    };
+
+    match tokio::time::timeout(std::time::Duration::from_secs(20), updater.check()).await {
+        Ok(Ok(Some(update))) => json!({ "ok": true, "available": true, "version": update.version }),
+        Ok(Ok(None)) => json!({ "ok": true, "available": false }),
+        Ok(Err(err)) => json!({ "ok": false, "error": err.to_string() }),
+        Err(_) => json!({ "ok": false, "error": "timeout" }),
+    }
+}
+
 async fn divine_update(app: AppHandle) -> Value {
     use tauri_plugin_updater::UpdaterExt;
 
@@ -246,10 +263,16 @@ fn main() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            // all'avvio solo un controllo silenzioso: se c'e' una versione nuova lo diciamo,
+            // senza scaricare nulla e senza overlay a ogni partenza.
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                let _ = divine_update(app_handle).await;
+                let found = divine_find_update(&app_handle).await;
+                if found.get("available").and_then(Value::as_bool) == Some(true) {
+                    let version = found.get("version").cloned().unwrap_or(Value::Null);
+                    let _ = app_handle.emit("update-available", json!({ "version": version }));
+                }
             });
             // where the packaged app keeps its resources (the client's mods live there)
             if let Ok(dir) = app.path().resource_dir() {
