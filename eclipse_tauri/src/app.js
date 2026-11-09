@@ -571,26 +571,61 @@ window.addEventListener('unhandledrejection', e => {
 });
 
 // ---- auto update: il lavoro lo fa il comando Rust divine_check_updates ----
+function tauriListen() {
+  return (window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen) || null;
+}
+
+// payload: { downloaded, total, percent } — percent null se il server non manda la dimensione
+function updateLabel(payload) {
+  const data = payload || {};
+  const downloaded = Number(data.downloaded) || 0;
+  const total = Number(data.total) || 0;
+  const percent = typeof data.percent === 'number' ? data.percent : (total > 0 ? Math.floor(downloaded / total * 100) : null);
+  if (percent != null) return Math.max(0, Math.min(100, percent)) + '%';
+  if (downloaded > 0) return (downloaded / 1048576).toFixed(1) + ' MB';
+  return '0%';
+}
+
+function setUpdateStatus(text) {
+  const line = $('#updateStatus');
+  if (line) line.textContent = text || '';
+}
+
 document.addEventListener('click', async e => {
   if (!e.target || e.target.id !== 'checkUpdates') return;
-  const invoke = window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke;
-  if (!invoke) return toast('Updater non disponibile');
-  toast('Controllo aggiornamenti...');
-  const listen = window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen;
+  const core = window.__TAURI__ && window.__TAURI__.core;
+  if (!core || typeof core.invoke !== 'function') { toast('Updater non disponibile'); return; }
+
+  const listen = tauriListen();
   let unlisten;
+  let last = -1;
   if (listen) {
-    unlisten = await listen('update-progress', e => {
-      const p = e.payload || [];
-      const chunk = p[0] || 0, total = p[1] || 0;
-      if (total > 0) toast('Download aggiornamento: ' + Math.round(chunk/total*100) + '%');
+    unlisten = await listen('update-progress', ev => {
+      const data = ev.payload || {};
+      const percent = typeof data.percent === 'number' ? data.percent : -1;
+      if (percent === last) return; // evita aggiornamenti ridondanti
+      last = percent;
+      setUpdateStatus('Scaricando aggiornamento: ' + updateLabel(data));
     });
   }
+  setUpdateStatus('Controllo aggiornamenti...');
+  toast('Controllo aggiornamenti...');
   try {
-    const res = await invoke('divine_check_updates');
-    if (!res || !res.ok) return toast('Update non riuscito: ' + ((res && res.error) || 'errore'));
-    if (!res.updated) return toast('Sei gia sulla versione piu recente');
-    toast('Aggiornato a ' + res.version + ': chiudi e riapri il launcher');
+    const res = await core.invoke('divine_check_updates');
+    if (res && res.busy) { setUpdateStatus('Aggiornamento gia in corso...'); return; }
+    if (!res || !res.ok) {
+      setUpdateStatus('');
+      toast('Update non riuscito: ' + ((res && res.error) || 'errore'));
+      return;
+    }
+    if (!res.updated) {
+      setUpdateStatus('');
+      toast('Sei gia sulla versione piu recente');
+      return;
+    }
+    setUpdateStatus('Aggiornato a ' + res.version + ': riavvio del launcher...');
   } catch (err) {
+    setUpdateStatus('');
     toast('Update non riuscito: ' + (err && err.message ? err.message : err));
   } finally {
     if (typeof unlisten === 'function') unlisten();
@@ -600,22 +635,66 @@ document.addEventListener('click', async e => {
 
 // ---- auto-update on startup ----
 (function () {
-  const listen = window.__TAURI__ && window.__TAURI__.event && window.__TAURI__.event.listen;
+  const listen = tauriListen();
   if (!listen) return;
-  let overlay;
-  function showOverlay(text) {
+  let overlay, fill, label;
+
+  function ensureOverlay(text) {
     if (!overlay) {
       overlay = document.createElement('div');
-      overlay.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.85);color:#fff;font-size:20px;z-index:99999;flex-direction:column;gap:12px;';
+      overlay.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.88);color:#fff;z-index:99999;flex-direction:column;gap:14px;cursor:pointer;';
+      overlay.title = 'Clicca per nascondere';
+      overlay.addEventListener('click', hideOverlay);
+      label = document.createElement('div');
+      label.style.cssText = 'font-size:20px;';
+      label.textContent = text || 'Updating, please wait...';
+      const bar = document.createElement('div');
+      bar.style.cssText = 'width:340px;height:8px;border-radius:999px;background:rgba(255,255,255,.18);overflow:hidden;';
+      fill = document.createElement('div');
+      fill.style.cssText = 'width:0%;height:100%;background:#4f8cff;transition:width .2s ease;';
+      bar.appendChild(fill);
+      const hint = document.createElement('div');
+      hint.style.cssText = 'font-size:12px;opacity:.6;';
+      hint.textContent = 'Clicca per nascondere';
+      overlay.append(label, bar, hint);
       document.body.appendChild(overlay);
+    } else if (text && label) {
+      label.textContent = text;
     }
-    overlay.textContent = text;
   }
-  listen('update-start', () => showOverlay('Updating, please wait...'));
-  listen('update-progress', e => {
-    const p = e.payload || [];
-    const chunk = p[0] || 0, total = p[1] || 0;
-    if (total > 0 && overlay) overlay.textContent = 'Updating: ' + Math.round(chunk/total*100) + '%';
+
+  function hideOverlay() {
+    if (overlay) { overlay.remove(); overlay = null; fill = null; label = null; }
+  }
+
+  function setPercent(payload) {
+    if (!overlay || !fill) return;
+    const data = payload || {};
+    const percent = typeof data.percent === 'number' ? Math.max(0, Math.min(100, data.percent)) : null;
+    fill.style.width = (percent != null ? percent : 0) + '%';
+    if (label) label.textContent = 'Updating: ' + updateLabel(data);
+  }
+
+  listen('update-start', ev => {
+    const version = ev && ev.payload && ev.payload.version;
+    ensureOverlay(version ? 'Updating to ' + version + '...' : 'Updating, please wait...');
+    setUpdateStatus('Scaricando aggiornamento...');
   });
-  listen('update-done', () => { if (overlay) overlay.textContent = 'Update complete. Restart the launcher.'; });
+  listen('update-progress', ev => {
+    setPercent(ev.payload);
+    setUpdateStatus('Scaricando aggiornamento: ' + updateLabel(ev.payload));
+  });
+  listen('update-done', () => {
+    if (overlay) {
+      if (label) label.textContent = 'Update installed, restarting...';
+      if (fill) fill.style.width = '100%';
+    }
+    setUpdateStatus('Aggiornamento installato, riavvio...');
+  });
+  listen('update-error', ev => {
+    hideOverlay();
+    setUpdateStatus('');
+    const message = ev && ev.payload && ev.payload.message;
+    if (message) toast(message);
+  });
 })();

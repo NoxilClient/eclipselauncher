@@ -3,6 +3,7 @@
 
 mod engine;
 
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use serde_json::{json, Value};
@@ -135,32 +136,109 @@ async fn eclipse_download_mod(app: AppHandle, opts: Option<DownloadInput>) -> Va
     }
 }
 
-#[tauri::command]
-async fn divine_check_updates(app: AppHandle) -> Value {
+/// Un solo download alla volta: l'updater d'avvio e il pulsante non devono sovrapporsi.
+static UPDATE_RUNNING: AtomicBool = AtomicBool::new(false);
+
+struct UpdateGuard;
+
+impl Drop for UpdateGuard {
+    fn drop(&mut self) {
+        UPDATE_RUNNING.store(false, Ordering::SeqCst);
+    }
+}
+
+fn emit_update_progress(app: &AppHandle, downloaded: u64, total: Option<u64>) {
+    let percent = total
+        .filter(|total| *total > 0)
+        .map(|total| ((downloaded.min(total) * 100) / total) as u32);
+    let _ = app.emit(
+        "update-progress",
+        json!({ "downloaded": downloaded, "total": total, "percent": percent }),
+    );
+}
+
+async fn divine_update(app: AppHandle) -> Value {
     use tauri_plugin_updater::UpdaterExt;
+
+    if UPDATE_RUNNING.swap(true, Ordering::SeqCst) {
+        return json!({ "ok": true, "updated": false, "busy": true });
+    }
+    let _guard = UpdateGuard;
+
     let updater = match app.updater() {
-        Ok(u) => u,
-        Err(err) => return json!({ "ok": false, "error": err.to_string() }),
+        Ok(updater) => updater,
+        Err(err) => {
+            let message = format!("Updater non disponibile: {err}");
+            let _ = app.emit("update-error", json!({ "message": message }));
+            return json!({ "ok": false, "error": message });
+        }
     };
+
     let update = match updater.check().await {
         Ok(Some(update)) => update,
         Ok(None) => return json!({ "ok": true, "updated": false }),
-        Err(err) => return json!({ "ok": false, "error": err.to_string() }),
+        Err(err) => {
+            let message = format!("Controllo aggiornamenti fallito: {err}");
+            let _ = app.emit("update-error", json!({ "message": message }));
+            return json!({ "ok": false, "error": message });
+        }
     };
+
     let version = update.version.clone();
-    let app2 = app.clone();
-    match update
-        .download_and_install(
-            move |chunk, total| {
-                let _ = app2.emit("update-progress", (chunk, total));
-            },
-            || {},
-        )
-        .await
-    {
-        Ok(()) => json!({ "ok": true, "updated": true, "version": version }),
-        Err(err) => json!({ "ok": false, "error": err.to_string() }),
+    let _ = app.emit("update-start", json!({ "version": version }));
+
+    let downloaded = Arc::new(AtomicU64::new(0));
+    let total_seen = Arc::new(AtomicU64::new(0));
+    let counter = downloaded.clone();
+    let total_state = total_seen.clone();
+    let progress_app = app.clone();
+
+    // il plugin passa solo la dimensione del singolo pezzo: il progresso va accumulato qui,
+    // altrimenti il rapporto pezzo/totale resta a 0% per tutto il download.
+    let download = update.download_and_install(
+        move |chunk: usize, total: Option<u64>| {
+            let done = counter.fetch_add(chunk as u64, Ordering::SeqCst) + chunk as u64;
+            if let Some(total) = total.filter(|total| *total > 0) {
+                total_state.store(total, Ordering::SeqCst);
+            }
+            let known_total = match total_state.load(Ordering::SeqCst) {
+                0 => None,
+                value => Some(value),
+            };
+            emit_update_progress(&progress_app, done, known_total);
+        },
+        || {},
+    );
+
+    // senza timeout un download bloccato lascia l'overlay a 0% per sempre
+    let result = tokio::time::timeout(std::time::Duration::from_secs(900), download).await;
+
+    match result {
+        Ok(Ok(())) => {
+            let _ = app.emit("update-done", json!({ "version": version }));
+            let restarter = app.clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(std::time::Duration::from_millis(1200)).await;
+                restarter.restart();
+            });
+            json!({ "ok": true, "updated": true, "version": version })
+        }
+        Ok(Err(err)) => {
+            let message = format!("Download aggiornamento non riuscito: {err}");
+            let _ = app.emit("update-error", json!({ "message": message }));
+            json!({ "ok": false, "error": message })
+        }
+        Err(_) => {
+            let message = "Download aggiornamento interrotto dopo 15 minuti: rete lenta o GitHub non raggiungibile".to_string();
+            let _ = app.emit("update-error", json!({ "message": message }));
+            json!({ "ok": false, "error": message })
+        }
     }
+}
+
+#[tauri::command]
+async fn divine_check_updates(app: AppHandle) -> Value {
+    divine_update(app).await
 }
 
 fn main() {
@@ -170,19 +248,8 @@ fn main() {
         .setup(|app| {
             let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-                use tauri_plugin_updater::UpdaterExt;
-                let updater = match app_handle.updater() { Ok(u) => u, Err(_) => return };
-                let update = match updater.check().await { Ok(Some(u)) => u, _ => return };
-                let _ = app_handle.emit("update-start", update.version.clone());
-                let app2 = app_handle.clone();
-                let res = update.download_and_install(move |chunk, total| {
-                    let _ = app2.emit("update-progress", (chunk, total));
-                }, || {}).await;
-                if res.is_ok() {
-                    let _ = app_handle.emit("update-done", ());
-                    app_handle.restart();
-                }
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                let _ = divine_update(app_handle).await;
             });
             // where the packaged app keeps its resources (the client's mods live there)
             if let Ok(dir) = app.path().resource_dir() {
