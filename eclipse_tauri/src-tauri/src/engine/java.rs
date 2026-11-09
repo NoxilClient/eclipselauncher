@@ -71,8 +71,77 @@ pub fn candidates() -> Vec<PathBuf> {
     out
 }
 
-/// Java major version read from `java -version` (None when it does not run).
+/// Versions already probed, keyed by executable path and its mtime, so the launcher
+/// does not spawn `java -version` again for every version it supports on every start.
+#[derive(Default, serde::Serialize, serde::Deserialize)]
+struct JavaCache {
+    #[serde(default)]
+    versions: std::collections::HashMap<String, (u64, u32)>,
+}
+
+fn cache_path() -> PathBuf {
+    super::client::data_dir().join("java_versions.json")
+}
+
+fn cache() -> &'static std::sync::Mutex<JavaCache> {
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<JavaCache>> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| {
+        let loaded = std::fs::read_to_string(cache_path())
+            .ok()
+            .and_then(|text| serde_json::from_str::<JavaCache>(&text).ok())
+            .unwrap_or_default();
+        std::sync::Mutex::new(loaded)
+    })
+}
+
+fn cache_key(java: &Path) -> Option<(String, u64)> {
+    let modified = std::fs::metadata(java).ok()?.modified().ok()?;
+    let mtime = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    Some((java.to_string_lossy().to_string(), mtime))
+}
+
+fn cache_save() {
+    let Ok(guard) = cache().lock() else {
+        return;
+    };
+    let Ok(text) = serde_json::to_string(&*guard) else {
+        return;
+    };
+    drop(guard);
+    let path = cache_path();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(path, text);
+}
+
+/// Java major version, from the cache when the executable has not changed.
 pub fn major_of(java: &Path) -> Option<u32> {
+    let Some((key, mtime)) = cache_key(java) else {
+        // `java` resolved through PATH has no metadata to key on: probe it.
+        return probe_major(java);
+    };
+    if let Ok(guard) = cache().lock() {
+        if let Some((cached_mtime, major)) = guard.versions.get(&key) {
+            if *cached_mtime == mtime {
+                return Some(*major);
+            }
+        }
+    }
+    let major = probe_major(java);
+    if let Some(major) = major {
+        if let Ok(mut guard) = cache().lock() {
+            guard.versions.insert(key, (mtime, major));
+        }
+        cache_save();
+    }
+    major
+}
+
+fn probe_major(java: &Path) -> Option<u32> {
     let output = Command::new(java).arg("-version").output().ok()?;
     let mut text = String::from_utf8_lossy(&output.stderr).to_string();
     text.push_str(&String::from_utf8_lossy(&output.stdout));
